@@ -1,6 +1,6 @@
 # Skupper website content audit
 
-A small Trafilatura-based CLI for collecting and analysing the **current `skupper.io` site**. It excludes `/v1/` and its descendants. The default seed is the homepage so the crawl can reach the current docs, getting-started material, examples, and CLI references—not just `/docs/`.
+A small Trafilatura-based CLI for collecting and analysing **skupper.io or another selected site**, including Skupper documentation previews. It excludes `/v1/` and its descendants on all sites. The default seed is the skupper.io homepage so the crawl can reach the current docs, getting-started material, examples, and CLI references—not just `/docs/`.
 
 **What it does:** discover URLs through Trafilatura's sitemap discovery and HTML links; fetch HTML politely; extract Markdown and metadata; produce a JSONL inventory and a Markdown content report. Raw HTML is cached so extraction settings can be changed without downloading every page again.
 
@@ -60,11 +60,57 @@ and `just restore`. Use `just scan 3000` to raise the page limit or
 `scan` reuses cached HTML but still makes discovery and robots requests.
 `query` requires the `sqlite3` CLI and an existing database.
 
-All output defaults to `out/`; override it with, for example,
+The default skupper.io output is `out/`; override it with, for example,
 `just --set out sample scan`. The `audit` command stops if the crawler reports
 errors or truncation. Inspect the scan results, then run `just build` to work
 with the captured pages even if some URLs failed. The default `build` restores
 HTML only; run `restore-assets` to fetch stylesheets, images, and scripts.
+
+## Scan another site and compare it with skupper.io
+
+Select a site with the `site` variable. Other sites automatically use
+`out/<hostname>/`, keeping their cached HTML, Markdown, inventory, database,
+report, and restored site separate from the existing skupper.io outputs:
+
+```bash
+just --set site https://skupper-docs.netlify.app/ scan
+just --set site https://skupper-docs.netlify.app/ build
+just --set site https://skupper-docs.netlify.app/ query
+just --set site https://skupper-docs.netlify.app/ serve 8080
+
+# Compare existing captures; no network requests are made by these commands.
+just diff > out/site-diff.md
+just diff-text > out/site-diff-details.md
+
+# Choose any two capture directories explicitly.
+just diff out out/skupper-docs.netlify.app
+```
+
+The Netlify outputs live in `out/skupper-docs.netlify.app/`. The crawler scopes
+page links, sitemap results, redirects, and robots checks to the seed's origin
+(scheme and host/port). Links from the preview to skupper.io are not followed.
+Reusing a directory containing another site's inventory is rejected before
+replacing its manifest. For multiple captures of the same hostname, set `out`
+explicitly. Direct CLI usage also requires a separate output directory:
+
+```bash
+uv run skupper-audit scan --seed https://skupper-docs.netlify.app/ \
+  --output-dir out/skupper-docs.netlify.app
+python compare_sites.py --left out/pages.jsonl \
+  --right out/skupper-docs.netlify.app/pages.jsonl --text-diff
+```
+
+Comparison matches pages by path, ignoring hostname differences and normalizing
+`index.html` aliases. It lists paths present in only one inventory, changes to
+content, titles, word/heading/code counts, terminology, crawl status, and internal
+link targets. Cached Markdown is compared after removing each site's own origin
+from URLs; when Markdown is missing, content comparison falls back to the
+extracted-body hash. `diff-text` includes unified Markdown diffs where available.
+Failed/blocked shared paths are listed separately and are not counted as
+unchanged content. Dates, authors, raw HTML layout, and downloaded assets are
+not compared. Missing inventory entries may reflect incomplete discovery rather
+than removed pages; check both `run.json` files. A completed comparison returns
+exit code 0 even if differences exist; invalid inputs return 1.
 
 ## Results
 
@@ -212,7 +258,7 @@ The `--precision` option reduces boilerplate but may remove useful text. The def
 
 ## Input through stdin or a file
 
-Passing an explicit URL list disables link traversal, which makes one-page jobs deterministic and suitable for pipelines or GNU Parallel. URLs outside `skupper.io`, `/v1/` links, non-HTML resources, and duplicate canonical URLs are ignored.
+Passing an explicit URL list disables link traversal, which makes one-page jobs deterministic and suitable for pipelines or GNU Parallel. URLs outside the `--seed` origin (skupper.io by default), `/v1/` links, non-HTML resources, and duplicate canonical URLs are ignored.
 
 ```bash
 # Single-page smoke test
@@ -231,7 +277,7 @@ cat pages.txt | parallel --pipe -N 10 \
 uv run skupper-audit report --input combined.jsonl > combined-report.md
 ```
 
-For large sites, don't increase concurrency aggressively. The crawler only accepts the exact `skupper.io` host and obeys `robots.txt` by default. `--ignore-robots` exists for environments where permission has been explicitly established.
+For large sites, don't increase concurrency aggressively. The crawler only accepts the selected seed's origin and obeys that site's `robots.txt` by default. `--ignore-robots` exists for environments where permission has been explicitly established.
 
 ## Tests
 

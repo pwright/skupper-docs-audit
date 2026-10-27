@@ -5,6 +5,7 @@ import argparse
 import difflib
 import json
 from pathlib import Path
+import re
 import sys
 from urllib.parse import urlsplit
 
@@ -80,7 +81,7 @@ def compare(left: Path, right: Path, *, text_diff: bool = False) -> str:
                 differences.insert(0, "extracted content changed")
                 if text_diff:
                     if old is not None and new is not None:
-                        diff = "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), fromfile="left" + path, tofile="right" + path))
+                        diff = "\n".join(difflib.unified_diff(old.splitlines(), new.splitlines(), fromfile="left" + path, tofile="right" + path, lineterm=""))
                     else:
                         differences.append("Text diff unavailable: cached Markdown is missing; compared body hashes")
         else:
@@ -104,7 +105,7 @@ def compare(left: Path, right: Path, *, text_diff: bool = False) -> str:
     for path, differences, diff in changed:
         lines += ["### " + path, ""] + ["- " + item for item in differences] + [""]
         if diff:
-            fence = "`" * max(3, max((len(s) for s in __import__('re').findall(r'`+', diff)), default=0) + 1)
+            fence = "`" * max(3, max((len(s) for s in re.findall(r'`+', diff)), default=0) + 1)
             lines += [fence + "diff", diff.rstrip("\n"), fence, ""]
     return "\n".join(lines) + "\n"
 
